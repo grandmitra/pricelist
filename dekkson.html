@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Informasi Data Terpusat</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PapaParse untuk CSV -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- SheetJS (XLSX) untuk Export Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 3px solid #3b82f6;
+            width: 24px;
+            height: 24px;
+            -webkit-animation: spin 1s linear infinite;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 h-screen flex overflow-hidden">
+
+    <!-- Sidebar Kiri -->
+    <aside id="sidebar" class="bg-white flex-shrink-0 border-r border-gray-200 flex flex-col transition-all duration-300 fixed inset-y-0 left-0 z-40 md:relative w-64 md:w-64 transform -translate-x-full md:translate-x-0 overflow-hidden shadow-xl md:shadow-none">
+        <div class="h-16 flex items-center px-6 border-b border-gray-100 justify-between bg-white">
+            <div class="flex items-center gap-2 text-blue-600">
+                <i class="fas fa-database text-xl"></i>
+                <h1 class="text-lg font-bold text-gray-900 truncate">Data Hub</h1>
+            </div>
+            <!-- Tombol Tutup untuk Mobile -->
+            <button class="md:hidden text-gray-400 hover:text-red-500 transition" onclick="toggleSidebar()">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto py-4 hide-scrollbar">
+            <p class="px-6 text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Daftar Sheet</p>
+            <nav id="nav-container" class="space-y-1 px-3">
+                <!-- Navigasi Sheet akan digenerate via JS -->
+            </nav>
+        </div>
+    </aside>
+
+    <!-- Overlay Mobile saat Sidebar Terbuka -->
+    <div id="sidebarOverlay" class="fixed inset-0 bg-black bg-opacity-50 z-30 hidden md:hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Konten Utama -->
+    <div class="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-gray-50">
+        
+        <!-- Header Atas -->
+        <header class="h-16 bg-white shadow-sm border-b border-gray-200 flex items-center justify-between px-4 sm:px-6 z-20">
+            <div class="flex items-center gap-4">
+                <!-- Tombol Hide/Unhide Sidebar -->
+                <button class="text-gray-500 hover:text-blue-600 focus:outline-none transition p-1" onclick="toggleSidebar()" title="Toggle Sidebar">
+                    <i class="fas fa-bars text-xl"></i>
+                </button>
+                <h2 class="text-lg font-semibold text-gray-800 hidden sm:block truncate" id="currentSheetTitle">Memuat Data...</h2>
+            </div>
+            
+            <div class="flex items-center gap-2 sm:gap-3">
+                <!-- Toggle Pilihan Tampilan (Card vs Table) -->
+                <div class="hidden sm:flex bg-gray-100 p-1 rounded-lg border border-gray-200">
+                    <button onclick="setViewMode('table')" id="btnViewTable" class="px-3 py-1.5 rounded-md text-sm font-medium transition-all bg-white shadow-sm text-blue-600">
+                        <i class="fas fa-table"></i> <span class="ml-1">Tabel</span>
+                    </button>
+                    <button onclick="setViewMode('card')" id="btnViewCard" class="px-3 py-1.5 rounded-md text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-th-large"></i> <span class="ml-1">Card</span>
+                    </button>
+                </div>
+                <!-- Tombol View Toggle Untuk Mobile (Icon Saja) -->
+                <div class="flex sm:hidden bg-gray-100 p-1 rounded-lg border border-gray-200">
+                    <button onclick="setViewMode('table')" id="btnViewTableMob" class="px-2.5 py-1.5 rounded-md text-sm transition-all bg-white shadow-sm text-blue-600">
+                        <i class="fas fa-table"></i>
+                    </button>
+                    <button onclick="setViewMode('card')" id="btnViewCardMob" class="px-2.5 py-1.5 rounded-md text-sm transition-all text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-th-large"></i>
+                    </button>
+                </div>
+
+                <!-- Tombol Export to Excel -->
+                <button onclick="exportToExcel()" class="text-sm bg-green-50 text-green-600 px-3 py-1.5 rounded-md hover:bg-green-100 transition shadow-sm border border-green-200 flex items-center gap-1.5" title="Export ke Excel">
+                    <i class="fas fa-file-excel"></i> <span class="hidden sm:inline">Excel</span>
+                </button>
+
+                <!-- Tombol Refresh -->
+                <button onclick="refreshCurrentData()" class="text-sm bg-blue-50 text-blue-600 px-3 py-1.5 rounded-md hover:bg-blue-100 transition shadow-sm border border-blue-200 flex items-center gap-1.5" title="Refresh Data">
+                    <i class="fas fa-sync-alt"></i> <span class="hidden sm:inline">Refresh</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Area Data Utama -->
+        <main class="flex-1 overflow-hidden flex flex-col w-full px-4 sm:px-6 py-6">
+            
+            <div class="bg-white rounded-t-xl shadow-sm border-b border-gray-100 p-4 flex flex-col sm:flex-row justify-between gap-4 items-center">
+                <!-- Search Bar -->
+                <div class="relative w-full sm:max-w-md">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-search text-gray-400"></i>
+                    </div>
+                    <input type="text" id="searchInput" class="block w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg bg-gray-50 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent sm:text-sm transition" placeholder="Ketik kata kunci untuk mencari...">
+                    <button id="clearSearchBtn" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-red-500 hidden transition" onclick="clearSearch()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+
+                <!-- Paging Filter -->
+                <div class="flex items-center gap-2 text-sm w-full sm:w-auto justify-between sm:justify-end">
+                    <label for="perPage" class="text-gray-600 font-medium whitespace-nowrap">Tampilkan:</label>
+                    <select id="perPage" class="border border-gray-300 rounded-lg text-sm py-1.5 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-sm" onchange="changePerPage(this.value)">
+                        <option value="10">10 Baris</option>
+                        <option value="25">25 Baris</option>
+                        <option value="50">50 Baris</option>
+                        <option value="100">100 Baris</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Area Tampilan Data -->
+            <div class="bg-white shadow-sm flex-1 overflow-hidden flex flex-col relative rounded-b-xl border border-t-0 border-gray-100">
+                
+                <!-- Loading State -->
+                <div id="loadingIndicator" class="absolute inset-0 bg-white z-20 flex flex-col items-center justify-center hidden bg-opacity-95 rounded-b-xl">
+                    <div class="loader mb-3"></div>
+                    <p class="text-gray-500 text-sm font-medium animate-pulse">Mengambil & Merapikan Data...</p>
+                </div>
+
+                <!-- Mode Table View -->
+                <div id="tableViewContainer" class="overflow-auto flex-1 block">
+                    <table class="min-w-full divide-y divide-gray-200 table-auto w-full">
+                        <thead class="bg-gray-50 sticky top-0 z-10" id="tableHeader">
+                            <!-- JS Generated Header -->
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200" id="tableBody">
+                            <!-- JS Generated Rows -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Mode Card View -->
+                <div id="cardViewContainer" class="overflow-y-auto flex-1 p-4 bg-gray-50 hidden">
+                    <div id="cardContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- JS Generated Cards -->
+                    </div>
+                </div>
+                
+                <!-- Empty State -->
+                <div id="emptyState" class="hidden absolute inset-0 flex flex-col items-center justify-center bg-white z-10 rounded-b-xl">
+                    <i class="fas fa-search text-5xl text-gray-200 mb-4"></i>
+                    <h3 class="text-lg font-medium text-gray-900">Data Tidak Ditemukan</h3>
+                    <p class="text-gray-500 text-sm mt-1">Coba sesuaikan kata kunci pencarian Anda.</p>
+                </div>
+            </div>
+
+            <!-- Footer Pagination -->
+            <div class="bg-white px-4 py-3 border border-gray-200 shadow-sm rounded-xl mt-4 flex items-center justify-between sm:px-6">
+                <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                    <div>
+                        <p class="text-sm text-gray-700">
+                            Menampilkan <span class="font-bold text-gray-900" id="pageStart">0</span> &mdash; <span class="font-bold text-gray-900" id="pageEnd">0</span> dari <span class="font-bold text-gray-900" id="totalItems">0</span> total data
+                        </p>
+                    </div>
+                    <div>
+                        <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination" id="paginationControls">
+                            <!-- JS Generated Buttons -->
+                        </nav>
+                    </div>
+                </div>
+                <!-- Mobile Pagination -->
+                <div class="flex items-center justify-between w-full sm:hidden">
+                    <button onclick="changePage(state.currentPage - 1)" id="btnPrevMobile" class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
+                        <i class="fas fa-arrow-left mr-2"></i> Prev
+                    </button>
+                    <span class="text-sm text-gray-700 font-medium">
+                        <span id="mobileCurrentPage">1</span> / <span id="mobileTotalPages">1</span>
+                    </span>
+                    <button onclick="changePage(state.currentPage + 1)" id="btnNextMobile" class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm">
+                        Next <i class="fas fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Konfigurasi Link Data
+        const sheetsConfig = [
+            { id: 'sheet_1', name: 'PRICE LIST PT FLS', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTplxQCTdBWmkXDDaKVL4HdBqEr4825F5eusKXVo73TiBkEOdGhbikbFzEALs_fOi_Vy6R7qKbF3Abz/pub?gid=484915157&single=true&output=csv' },
+            { id: 'sheet_2', name: 'DEON ELEKTRIK', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTplxQCTdBWmkXDDaKVL4HdBqEr4825F5eusKXVo73TiBkEOdGhbikbFzEALs_fOi_Vy6R7qKbF3Abz/pub?gid=527505668&single=true&output=csv' },
+            { id: 'sheet_3', name: 'DEON HARDWARE ', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTplxQCTdBWmkXDDaKVL4HdBqEr4825F5eusKXVo73TiBkEOdGhbikbFzEALs_fOi_Vy6R7qKbF3Abz/pub?gid=1602868692&single=true&output=csv' },
+            { id: 'sheet_4', name: 'SANITARY', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTplxQCTdBWmkXDDaKVL4HdBqEr4825F5eusKXVo73TiBkEOdGhbikbFzEALs_fOi_Vy6R7qKbF3Abz/pub?gid=303847745&single=true&output=csv' },
+            { id: 'sheet_5', name: 'WASTAFEL', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTplxQCTdBWmkXDDaKVL4HdBqEr4825F5eusKXVo73TiBkEOdGhbikbFzEALs_fOi_Vy6R7qKbF3Abz/pub?gid=303847745&single=true&output=csv' },
+            { id: 'sheet_6', name: 'CLOSET', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTplxQCTdBWmkXDDaKVL4HdBqEr4825F5eusKXVo73TiBkEOdGhbikbFzEALs_fOi_Vy6R7qKbF3Abz/pub?gid=1021978175&single=true&output=csv' },
+            { id: 'sheet_7', name: 'PAKETAN JET SHOWER HEAD + FLEXI', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTplxQCTdBWmkXDDaKVL4HdBqEr4825F5eusKXVo73TiBkEOdGhbikbFzEALs_fOi_Vy6R7qKbF3Abz/pub?gid=659028267&single=true&output=csv' },
+            { id: 'sheet_8', name: 'PAKETAN HAND SHOWERSET+ ADJUSTA', url: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTplxQCTdBWmkXDDaKVL4HdBqEr4825F5eusKXVo73TiBkEOdGhbikbFzEALs_fOi_Vy6R7qKbF3Abz/pub?gid=876813000&single=true&output=csv' }
+        ];
+
+        // Manajemen State Aplikasi
+        let state = {
+            currentSheetId: sheetsConfig[0].id,
+            data: [],          
+            filteredData: [],  
+            headers: [],       
+            currentPage: 1,
+            perPage: 10,
+            searchQuery: '',
+            viewMode: 'table' // 'table' or 'card'
+        };
+
+        const CACHE_EXPIRY_MS = 60 * 60 * 1000; // 1 Jam masa aktif cache
+
+        // Inisialisasi Aplikasi
+        document.addEventListener('DOMContentLoaded', () => {
+            renderNav();
+            setupSearchListener();
+            updateCurrentSheetTitle();
+            
+            // Set view otomatis (Mobile: default card, Desktop: default table)
+            if (window.innerWidth < 768) {
+                setViewMode('card');
+            } else {
+                setViewMode('table');
+            }
+
+            loadSheetData(state.currentSheetId);
+        });
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            
+            sidebar.classList.toggle('-translate-x-full');
+            sidebar.classList.toggle('md:w-0');
+            sidebar.classList.toggle('md:w-64');
+            sidebar.classList.toggle('md:border-r');
+            
+            if (!sidebar.classList.contains('-translate-x-full')) {
+                overlay.classList.remove('hidden');
+            } else {
+                overlay.classList.add('hidden');
+            }
+        }
+
+        function setViewMode(mode) {
+            state.viewMode = mode;
+            
+            const btnTable = document.getElementById('btnViewTable');
+            const btnCard = document.getElementById('btnViewCard');
+            const btnTableMob = document.getElementById('btnViewTableMob');
+            const btnCardMob = document.getElementById('btnViewCardMob');
+            const tableView = document.getElementById('tableViewContainer');
+            const cardView = document.getElementById('cardViewContainer');
+
+            const activeClasses = ['bg-white', 'shadow-sm', 'text-blue-600'];
+            const inactiveClasses = ['text-gray-500', 'hover:text-gray-700'];
+
+            if (mode === 'table') {
+                btnTable.classList.add(...activeClasses);
+                btnTable.classList.remove(...inactiveClasses);
+                btnTableMob.classList.add(...activeClasses);
+                btnTableMob.classList.remove(...inactiveClasses);
+                
+                btnCard.classList.remove(...activeClasses);
+                btnCard.classList.add(...inactiveClasses);
+                btnCardMob.classList.remove(...activeClasses);
+                btnCardMob.classList.add(...inactiveClasses);
+
+                tableView.classList.remove('hidden');
+                tableView.classList.add('block');
+                cardView.classList.add('hidden');
+                cardView.classList.remove('block');
+            } else {
+                btnCard.classList.add(...activeClasses);
+                btnCard.classList.remove(...inactiveClasses);
+                btnCardMob.classList.add(...activeClasses);
+                btnCardMob.classList.remove(...inactiveClasses);
+                
+                btnTable.classList.remove(...activeClasses);
+                btnTable.classList.add(...inactiveClasses);
+                btnTableMob.classList.remove(...activeClasses);
+                btnTableMob.classList.add(...inactiveClasses);
+
+                cardView.classList.remove('hidden');
+                cardView.classList.add('block');
+                tableView.classList.add('hidden');
+                tableView.classList.remove('block');
+            }
+        }
+
+        function renderNav() {
+            const navContainer = document.getElementById('nav-container');
+            navContainer.innerHTML = '';
+            
+            sheetsConfig.forEach((sheet) => {
+                const btn = document.createElement('button');
+                const isActive = state.currentSheetId === sheet.id;
+                
+                btn.className = `w-full text-left px-4 py-2.5 rounded-lg mb-1.5 text-sm font-medium transition-all flex items-center gap-3 ${
+                    isActive 
+                    ? 'bg-blue-50 text-blue-700 shadow-sm border border-blue-100' 
+                    : 'text-gray-600 hover:bg-gray-100 border border-transparent'
+                }`;
+                btn.innerHTML = `<i class="fas fa-file-csv ${isActive ? 'text-blue-600' : 'text-gray-400'}"></i> ${sheet.name}`;
+                
+                btn.onclick = () => {
+                    switchSheet(sheet.id);
+                    if (window.innerWidth < 768) {
+                        toggleSidebar();
+                    }
+                };
+                navContainer.appendChild(btn);
+            });
+        }
+
+        function updateCurrentSheetTitle() {
+            const activeSheet = sheetsConfig.find(s => s.id === state.currentSheetId);
+            if (activeSheet) {
+                document.getElementById('currentSheetTitle').textContent = activeSheet.name;
+            }
+        }
+
+        function switchSheet(sheetId) {
+            if (state.currentSheetId === sheetId) return;
+            state.currentSheetId = sheetId;
+            state.currentPage = 1;
+            
+            clearSearch(false); 
+            renderNav();
+            updateCurrentSheetTitle();
+            loadSheetData(sheetId);
+        }
+
+        function refreshCurrentData() {
+            localStorage.removeItem(`sheet_data_${state.currentSheetId}`);
+            localStorage.removeItem(`sheet_time_${state.currentSheetId}`);
+            loadSheetData(state.currentSheetId);
+        }
+
+        // Fungsi Memuat Data dengan Optimalisasi Local Storage
+        async function loadSheetData(sheetId) {
+            showLoading(true);
+            const sheet = sheetsConfig.find(s => s.id === sheetId);
+            
+            try {
+                const cacheTime = localStorage.getItem(`sheet_time_${sheetId}`);
+                const cachedData = localStorage.getItem(`sheet_data_${sheetId}`);
+                const now = new Date().getTime();
+
+                // Jika cache masih ada dan belum expired, gunakan local storage agar loading instant
+                if (cachedData && cacheTime && (now - cacheTime < CACHE_EXPIRY_MS)) {
+                    const parsedData = JSON.parse(cachedData);
+                    state.headers = parsedData.headers;
+                    state.data = parsedData.data;
+                    applyFiltersAndRender();
+                    showLoading(false);
+                    return;
+                }
+
+                // Ambil data terbaru dari Google Sheets CSV jika cache kadaluarsa/belum ada
+                const response = await fetch(sheet.url);
+                if (!response.ok) throw new Error('Gagal mengambil data dari Google Sheets');
+                
+                const csvText = await response.text();
+                
+                Papa.parse(csvText, {
+                    header: false,
+                    skipEmptyLines: true,
+                    complete: function(results) {
+                        const cleaned = cleanMessyData(results.data);
+                        state.headers = cleaned.headers;
+                        state.data = cleaned.data;
+                        
+                        try {
+                            localStorage.setItem(`sheet_data_${sheetId}`, JSON.stringify(cleaned));
+                            localStorage.setItem(`sheet_time_${sheetId}`, new Date().getTime());
+                        } catch (e) {
+                            console.warn("Storage Quota Exceeded. Membersihkan cache lama.");
+                            localStorage.clear();
+                        }
+
+                        applyFiltersAndRender();
+                        showLoading(false);
+                    },
+                    error: function(error) {
+                        console.error("CSV Parse Error:", error);
+                        showLoading(false);
+                        alert("Gagal membaca struktur data CSV.");
+                    }
+                });
+            } catch (error) {
+                console.error("Network Error:", error);
+                showLoading(false);
+                alert("Gagal mengambil data. Pastikan perangkat terhubung internet dan link Sheet aktif.");
+            }
+        }
+
+        // Algoritma Merapikan Data Sheets Tidak Beraturan
+        function cleanMessyData(rawArray) {
+            if (!rawArray || rawArray.length === 0) return { headers: [], data: [] };
+
+            let maxColsCount = 0;
+            let headerRowIndex = 0;
+            
+            const searchLimit = Math.min(15, rawArray.length);
+            for (let i = 0; i < searchLimit; i++) {
+                const validCells = rawArray[i].filter(cell => cell && cell.toString().trim() !== '').length;
+                if (validCells > maxColsCount) {
+                    maxColsCount = validCells;
+                    headerRowIndex = i;
+                }
+            }
+
+            let rawHeaders = rawArray[headerRowIndex];
+            let cleanHeaders = [];
+            let headerCounts = {};
+
+            rawHeaders.forEach((h, idx) => {
+                let hName = h ? h.toString().trim() : `Kolom_${idx + 1}`;
+                if (hName === '') hName = `Kolom_${idx + 1}`;
+                
+                if (headerCounts[hName]) {
+                    headerCounts[hName]++;
+                    hName = `${hName} (${headerCounts[hName]})`;
+                } else {
+                    headerCounts[hName] = 1;
+                }
+                cleanHeaders.push(hName);
+            });
+
+            let cleanDataList = [];
+            for (let i = headerRowIndex + 1; i < rawArray.length; i++) {
+                const row = rawArray[i];
+                
+                const isRowEmpty = row.every(cell => !cell || cell.toString().trim() === '');
+                if (isRowEmpty) continue;
+
+                let rowData = {};
+                cleanHeaders.forEach((headerName, idx) => {
+                    rowData[headerName] = row[idx] !== undefined && row[idx].toString().trim() !== '' ? row[idx] : '-';
+                });
+                cleanDataList.push(rowData);
+            }
+
+            return { headers: cleanHeaders, data: cleanDataList };
+        }
+
+        // Fitur Export ke Excel menggunakan SheetJS
+        function exportToExcel() {
+            if (!state.filteredData || state.filteredData.length === 0) {
+                alert("Tidak ada data untuk diexport!");
+                return;
+            }
+
+            // Memetakan data sesuai urutan header agar rapi di Excel
+            const exportData = state.filteredData.map((row, index) => {
+                let obj = { "No": index + 1 };
+                state.headers.forEach(h => {
+                    obj[h] = row[h] !== undefined ? row[h] : '-';
+                });
+                return obj;
+            });
+
+            const worksheet = XLSX.utils.json_to_sheet(exportData);
+            const workbook = XLSX.utils.book_new();
+            
+            const activeSheet = sheetsConfig.find(s => s.id === state.currentSheetId);
+            const sheetName = activeSheet ? activeSheet.name.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 30) : "Data_Export";
+            
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+            
+            // Download file .xlsx
+            XLSX.writeFile(workbook, `${sheetName}_${new Date().toISOString().slice(0,10)}.xlsx`);
+        }
+
+        function setupSearchListener() {
+            const searchInput = document.getElementById('searchInput');
+            const clearBtn = document.getElementById('clearSearchBtn');
+
+            searchInput.addEventListener('input', (e) => {
+                state.searchQuery = e.target.value.toLowerCase();
+                clearBtn.classList.toggle('hidden', state.searchQuery.length === 0);
+                state.currentPage = 1;
+                applyFiltersAndRender();
+            });
+        }
+
+        function clearSearch(renderAfter = true) {
+            const searchInput = document.getElementById('searchInput');
+            searchInput.value = '';
+            state.searchQuery = '';
+            document.getElementById('clearSearchBtn').classList.add('hidden');
+            state.currentPage = 1;
+            if(renderAfter) applyFiltersAndRender();
+        }
+
+        function changePerPage(value) {
+            state.perPage = parseInt(value);
+            state.currentPage = 1;
+            applyFiltersAndRender();
+        }
+
+        function changePage(newPage) {
+            const totalPages = Math.ceil(state.filteredData.length / state.perPage);
+            if (newPage < 1 || newPage > totalPages) return;
+            state.currentPage = newPage;
+            renderView();
+        }
+
+        function applyFiltersAndRender() {
+            if (state.searchQuery.trim() === '') {
+                state.filteredData = state.data;
+            } else {
+                state.filteredData = state.data.filter(row => {
+                    return Object.values(row).some(val => 
+                        String(val).toLowerCase().includes(state.searchQuery)
+                    );
+                });
+            }
+            renderView();
+        }
+
+        function renderView() {
+            const emptyState = document.getElementById('emptyState');
+            
+            if (state.filteredData.length === 0) {
+                emptyState.classList.remove('hidden');
+                document.getElementById('tableHeader').innerHTML = '';
+                document.getElementById('tableBody').innerHTML = '';
+                document.getElementById('cardContainer').innerHTML = '';
+                renderPagination(0, 0);
+                return;
+            } else {
+                emptyState.classList.add('hidden');
+            }
+
+            const startIndex = (state.currentPage - 1) * state.perPage;
+            const endIndex = startIndex + state.perPage;
+            const paginatedItems = state.filteredData.slice(startIndex, endIndex);
+
+            renderTableHeader();
+            renderTableBody(paginatedItems);
+            renderCardView(paginatedItems);
+            renderPagination(startIndex + 1, Math.min(endIndex, state.filteredData.length));
+        }
+
+        function renderTableHeader() {
+            const thead = document.getElementById('tableHeader');
+            let html = '<tr>';
+            html += `<th scope="col" class="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider bg-gray-100 border-b w-12 shadow-sm">No</th>`;
+            
+            state.headers.forEach(h => {
+                html += `<th scope="col" class="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider bg-gray-100 border-b shadow-sm whitespace-nowrap">${h}</th>`;
+            });
+            html += '</tr>';
+            thead.innerHTML = html;
+        }
+
+        function renderTableBody(items) {
+            const tbody = document.getElementById('tableBody');
+            let html = '';
+            const startNumber = (state.currentPage - 1) * state.perPage + 1;
+
+            items.forEach((row, index) => {
+                html += `<tr class="hover:bg-blue-50 transition-colors duration-150 group">`;
+                html += `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-medium">${startNumber + index}</td>`;
+                
+                state.headers.forEach(h => {
+                    let cellVal = row[h];
+                    let displayVal = String(cellVal).length > 70 ? String(cellVal).substring(0,70) + '...' : cellVal;
+                    html += `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-800 border-l border-gray-100" title="${cellVal}">${displayVal}</td>`;
+                });
+                html += `</tr>`;
+            });
+            tbody.innerHTML = html;
+        }
+
+        function renderCardView(items) {
+            const container = document.getElementById('cardContainer');
+            let html = '';
+            const startNumber = (state.currentPage - 1) * state.perPage + 1;
+
+            items.forEach((row, index) => {
+                html += `
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+                    <div class="bg-gray-50 px-5 py-3 border-b border-gray-200 flex justify-between items-center">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded-md">#${startNumber + index}</span>
+                        </div>
+                    </div>
+                    <div class="p-5 flex flex-col gap-4">`;
+                
+                state.headers.forEach((h) => {
+                    let cellVal = row[h];
+                    html += `
+                        <div class="flex flex-col border-b border-gray-50 pb-2 last:border-0 last:pb-0">
+                            <span class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">${h}</span>
+                            <span class="text-sm text-gray-800 break-words leading-relaxed">${cellVal}</span>
+                        </div>
+                    `;
+                });
+                
+                html += `</div></div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        function renderPagination(startNum, endNum) {
+            const totalItems = state.filteredData.length;
+            const totalPages = Math.ceil(totalItems / state.perPage);
+            
+            document.getElementById('pageStart').textContent = startNum;
+            document.getElementById('pageEnd').textContent = endNum;
+            document.getElementById('totalItems').textContent = totalItems;
+
+            document.getElementById('mobileCurrentPage').textContent = totalPages === 0 ? 0 : state.currentPage;
+            document.getElementById('mobileTotalPages').textContent = totalPages;
+            
+            const btnPrevMob = document.getElementById('btnPrevMobile');
+            const btnNextMob = document.getElementById('btnNextMobile');
+            btnPrevMob.disabled = state.currentPage === 1 || totalPages === 0;
+            btnNextMob.disabled = state.currentPage === totalPages || totalPages === 0;
+
+            const nav = document.getElementById('paginationControls');
+            let navHtml = '';
+
+            const isPrevDisabled = state.currentPage === 1 || totalPages === 0;
+            navHtml += `
+                <button onclick="changePage(${state.currentPage - 1})" ${isPrevDisabled ? 'disabled' : ''} class="relative inline-flex items-center px-3 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-chevron-left h-4 w-4 text-center leading-4"></i>
+                </button>
+            `;
+
+            let startPage = Math.max(1, state.currentPage - 2);
+            let endPage = Math.min(totalPages, startPage + 4);
+            if (endPage - startPage < 4 && startPage > 1) {
+                startPage = Math.max(1, endPage - 4);
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                const isActive = i === state.currentPage;
+                const activeClass = isActive 
+                    ? "z-10 bg-blue-50 border-blue-500 text-blue-600 relative inline-flex items-center px-4 py-2 border text-sm font-bold" 
+                    : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50 relative inline-flex items-center px-4 py-2 border text-sm font-medium";
+                navHtml += `<button onclick="changePage(${i})" class="${activeClass}">${i}</button>`;
+            }
+
+            const isNextDisabled = state.currentPage === totalPages || totalPages === 0;
+            navHtml += `
+                <button onclick="changePage(${state.currentPage + 1})" ${isNextDisabled ? 'disabled' : ''} class="relative inline-flex items-center px-3 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-chevron-right h-4 w-4 text-center leading-4"></i>
+                </button>
+            `;
+
+            nav.innerHTML = navHtml;
+        }
+
+        function showLoading(show) {
+            const loader = document.getElementById('loadingIndicator');
+            if (show) {
+                loader.classList.remove('hidden');
+            } else {
+                loader.classList.add('hidden');
+            }
+        }
+    </script>
+</body>
+</html>
